@@ -19,9 +19,30 @@ import GLib from 'gi://GLib';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {BUS_ADDRESS_REGEX} from './dbusUtils.js';
 import {SignalConnectionPromise} from './promiseUtils.js';
+
+let logger = null;
+
+// The messages are prefixed with the extension name
+function getLogger() {
+    logger ??= Extension.lookupByURL(import.meta.url)?.getLogger();
+    return logger ?? console;
+}
+
+export function debug(message) {
+    getLogger().debug(message);
+}
+
+export function warn(message) {
+    getLogger().warn(message);
+}
+
+export function logError(error, message = 'Unexpected error') {
+    getLogger().error(`${message}:`, error);
+}
 
 export function isCancelled(error) {
     return error instanceof GLib.Error &&

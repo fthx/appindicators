@@ -47,7 +47,7 @@ export class StatusNotifierWatcher {
         this._ownNameId = Gio.DBus.session.own_name(WATCHER_BUS_NAME,
             Gio.BusNameOwnerFlags.NONE,
             () => this._emitSignal('StatusNotifierHostRegistered'),
-            () => console.warn(`AppIndicators: ${WATCHER_BUS_NAME} is not owned`));
+            () => Util.warn(`Could not own ${WATCHER_BUS_NAME}, is another tray host running?`));
 
         this._seekStatusNotifierItems(extensionPath).catch(e =>
             Util.logErrorUnlessCancelled(e, 'Looking for StatusNotifierItems'));
@@ -57,7 +57,7 @@ export class StatusNotifierWatcher {
         try {
             this._dbusImpl.emit_signal(name, parameters);
         } catch (e) {
-            logError(e, `Failed to emit ${name}`);
+            Util.logError(e, `Failed to emit ${name}`);
         }
     }
 
@@ -68,7 +68,7 @@ export class StatusNotifierWatcher {
             this._dbusImpl.emit_property_changed('RegisteredStatusNotifierItems',
                 new GLib.Variant('as', this.RegisteredStatusNotifierItems));
         } catch (e) {
-            logError(e, 'Failed to notify the registered items');
+            Util.logError(e, 'Failed to notify the registered items');
         }
     }
 
@@ -79,11 +79,11 @@ export class StatusNotifierWatcher {
             return;
 
         if (this._items.has(id)) {
-            console.warn(`AppIndicators: item ${id} is already registered`);
+            Util.warn(`Item ${id} is already registered`);
             return;
         }
 
-        console.debug(`AppIndicators: registering StatusNotifierItem ${id}`);
+        Util.debug(`Registering StatusNotifierItem ${id}`);
 
         const indicator = new AppIndicator.AppIndicator(service, busName, objectPath);
         this._items.set(id, indicator);
@@ -93,8 +93,7 @@ export class StatusNotifierWatcher {
             this._notifyItemsChanged('StatusNotifierItemUnregistered', indicator.service);
         });
         indicator.connect('name-owner-changed', () =>
-            this._onIndicatorNameOwnerChanged(indicator).catch(e =>
-                Util.logErrorUnlessCancelled(e)));
+            this._onIndicatorNameOwnerChanged(indicator).catch(Util.logErrorUnlessCancelled));
 
         try {
             // if the desktop is not ready delay the icon creation and signal emissions
@@ -126,7 +125,7 @@ export class StatusNotifierWatcher {
         const item = this._items.get(Util.indicatorId(service, busName, objectPath));
 
         if (item) {
-            console.debug(`AppIndicators: ${item.uniqueId} re-registered, resetting it`);
+            Util.debug(`${item.uniqueId} re-registered, resetting it`);
             item.reset();
             return;
         }
@@ -183,11 +182,11 @@ export class StatusNotifierWatcher {
 
             const service = services.find(s =>
                 s.startsWith('org.kde.StatusNotifierItem')) ?? services[0];
-            console.debug(`AppIndicators: using brute-force mode for ${name}${path}`);
+            Util.debug(`Using brute-force mode for ${name}${path}`);
 
             await this._registerItem(service, name, path);
         } catch (e) {
-            Util.logErrorUnlessCancelled(e);
+            Util.logErrorUnlessCancelled(e, `Failed to register ${json}`);
         }
     }
 
@@ -197,7 +196,7 @@ export class StatusNotifierWatcher {
         // while kde apps send a bus name
         let busName, objectPath;
 
-        console.debug(`AppIndicators: registration request for service '${service}'`);
+        Util.debug(`Registration request for service '${service}'`);
         const pathIndex = service.indexOf('/');
 
         try {
@@ -209,10 +208,12 @@ export class StatusNotifierWatcher {
                 // Electron started another non-standard format: yay!
                 // They're now providing the service name as first element,
                 // followed by a DBus path. This is wrong, but not much we can
-                // do about it.
-                busName = await DBusUtils.getUniqueBusName(invocation.get_connection(),
-                    service.slice(0, pathIndex), this._cancellable);
+                // do about it. The item is identified by its name only, as
+                // the bus analyzer does, so that it's not registered twice.
                 objectPath = service.slice(pathIndex);
+                service = service.slice(0, pathIndex);
+                busName = await DBusUtils.getUniqueBusName(invocation.get_connection(),
+                    service, this._cancellable);
             } else if (DBusUtils.BUS_SNI_NAME_REGEX.test(service)) {
                 // If the app uses a standard SNI name, use it as is, as some
                 // apps (look at you electron!) rely on the bus name and match
@@ -225,13 +226,17 @@ export class StatusNotifierWatcher {
                 objectPath = DEFAULT_ITEM_OBJECT_PATH;
             }
 
-            if (!busName || !objectPath)
-                throw new Error(`Impossible to register an indicator for parameters '${service}'`);
+            if (!busName || !objectPath) {
+                const message = `Impossible to register an indicator for parameters '${service}'`;
+                Util.warn(message);
+                invocation.return_dbus_error('org.gnome.gjs.JSError.ValueError', message);
+                return;
+            }
 
             await this._ensureItemRegistered(service, busName, objectPath);
             invocation.return_value(null);
         } catch (e) {
-            Util.logErrorUnlessCancelled(e);
+            Util.logErrorUnlessCancelled(e, `Failed to register '${service}'`);
             invocation.return_dbus_error('org.gnome.gjs.JSError.ValueError', e.message);
         }
     }

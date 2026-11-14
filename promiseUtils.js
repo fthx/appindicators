@@ -50,10 +50,9 @@ export class CancellablePromise extends Promise {
         if (cancellable) {
             this._cancellable = cancellable;
             this._cancellableId = cancellable.connect(() => {
-                // g_cancellable_disconnect() can't be called from the handler
-                const id = this._cancellableId;
+                // The handler can't be disconnected from itself, but there's
+                // no need to: a cancelled cancellable is never used again
                 this._cancellableId = 0;
-                GLib.idle_add_once(GLib.PRIORITY_DEFAULT, () => cancellable.disconnect(id));
                 this.cancel();
             });
         }

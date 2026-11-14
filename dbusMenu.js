@@ -78,7 +78,7 @@ class DbusMenuItem extends Signals.EventEmitter {
     // Returns whether the property changed
     _setProperty(name, value) {
         if (value && name in PROPERTY_TYPES && value.get_type_string() !== PROPERTY_TYPES[name]) {
-            console.warn(`Cannot set menu item property ${name}: type mismatch!`);
+            Util.warn(`Cannot set menu item property ${name}: type mismatch!`);
             return false;
         }
 
@@ -139,7 +139,7 @@ class DbusMenuItem extends Signals.EventEmitter {
     removeChild(childId) {
         const position = this._childrenIds.indexOf(childId);
         if (position < 0) {
-            console.warn("Trying to remove menu child which doesn't exist");
+            Util.warn("Trying to remove menu child which doesn't exist");
             return;
         }
 
@@ -150,7 +150,7 @@ class DbusMenuItem extends Signals.EventEmitter {
     moveChild(childId, newPosition) {
         const oldPosition = this._childrenIds.indexOf(childId);
         if (oldPosition < 0) {
-            console.warn("Trying to move menu child which doesn't exist");
+            Util.warn("Trying to move menu child which doesn't exist");
             return;
         }
 
@@ -221,12 +221,13 @@ const DBusClient = GObject.registerClass({
     getItem(id) {
         const item = this._items.get(id);
         if (!item)
-            console.warn(`trying to retrieve menu item for non-existing id ${id} !?`);
+            Util.warn(`Trying to retrieve a non-existing menu item: ${id}`);
         return item ?? null;
     }
 
     _requestLayoutUpdate() {
-        this._updateLayout().catch(e => Util.logErrorUnlessCancelled(e));
+        this._updateLayout().catch(e =>
+            Util.logErrorUnlessCancelled(e, 'Failed to get the menu layout'));
     }
 
     // The original implementation will only request partial layouts if somehow
@@ -326,7 +327,7 @@ const DBusClient = GObject.registerClass({
     _requestProperties(id) {
         this._requestPropertiesAsync(id).catch(e => {
             if (!Util.isCancelled(e))
-                console.warn(`Could not get menu properties: ${e}`);
+                Util.warn(`Could not get menu properties: ${e}`);
         });
     }
 
@@ -403,7 +404,7 @@ const DBusClient = GObject.registerClass({
                 e.matches?.(Gio.DBusError, Gio.DBusError.FAILED))
                 this._hasAboutToShow = false;
             else
-                Util.logErrorUnlessCancelled(e);
+                Util.logErrorUnlessCancelled(e, 'AboutToShow failed');
         }
     }
 
@@ -453,10 +454,10 @@ function onSubMenuOpenStateChanged(item, menu, open) {
             parent._openedSubMenu = menu;
         }
 
-        item._dbusItem.handleEvent('opened').catch(e => Util.logErrorUnlessCancelled(e));
+        item._dbusItem.handleEvent('opened').catch(Util.logErrorUnlessCancelled);
         item._dbusItem.sendAboutToShow();
     } else {
-        item._dbusItem.handleEvent('closed').catch(e => Util.logErrorUnlessCancelled(e));
+        item._dbusItem.handleEvent('closed').catch(Util.logErrorUnlessCancelled);
     }
 }
 
@@ -465,10 +466,10 @@ function onActivate(item, event) {
     const {indicator} = item._dbusClient;
     const timestamp = event?.get_time() ?? 0;
     const sendClicked = () => dbusItem.handleEvent('clicked', GLib.Variant.new_int32(0),
-        timestamp).catch(e => Util.logErrorUnlessCancelled(e));
+        timestamp).catch(Util.logErrorUnlessCancelled);
 
     if (timestamp && indicator)
-        indicator.provideActivationToken(timestamp).catch(logError).finally(sendClicked);
+        indicator.provideActivationToken(timestamp).catch(Util.logError).finally(sendClicked);
     else
         sendClicked();
 }
@@ -517,7 +518,7 @@ async function updateImage(item) {
             item._icon.gicon = await GdkPixbuf.Pixbuf.new_from_stream_async(
                 inputStream, cancellable);
         } catch (e) {
-            Util.logErrorUnlessCancelled(e);
+            Util.logErrorUnlessCancelled(e, 'Failed to load a menu icon');
         }
     } else {
         item._icon.gicon = null;
@@ -579,7 +580,7 @@ function onPropertyChanged(item, name) {
         replaceItem(item);
         break;
     default:
-        console.debug(`Unhandled menu item property change: ${name}`);
+        Util.debug(`Unhandled menu item property change: ${name}`);
     }
 }
 
@@ -618,7 +619,7 @@ function createItem(client, dbusItem) {
         if (isSubMenu) {
             callback(...args);
         } else {
-            console.warn('Tried to change the children of a non-submenu item, recreating it');
+            Util.warn('Tried to change the children of a non-submenu item, recreating it');
             replaceItem(item);
         }
     };
@@ -672,7 +673,8 @@ export class Client extends Signals.EventEmitter {
         this._client = new DBusClient(busName, path);
         this._readyChangedId = this._client.connect('ready-changed',
             () => this.emit('ready-changed'));
-        this._client.initAsync().catch(e => Util.logErrorUnlessCancelled(e));
+        this._client.initAsync().catch(e =>
+            Util.logErrorUnlessCancelled(e, 'Failed to connect to the menu'));
     }
 
     get isReady() {
@@ -720,7 +722,7 @@ export class Client extends Signals.EventEmitter {
         idlePromise.then(() => {
             if (this._itemsBeingAdded.has(child))
                 this._rootMenu.addMenuItem(createItem(this, child), position);
-        }).catch(e => Util.logErrorUnlessCancelled(e)).finally(() =>
+        }).catch(Util.logErrorUnlessCancelled).finally(() =>
             this._itemsBeingAdded.delete(child));
     }
 
@@ -740,7 +742,7 @@ export class Client extends Signals.EventEmitter {
 
         if (open) {
             this._rootMenu._openedSubMenu?.close();
-            this._rootItem.handleEvent('opened').catch(e => Util.logErrorUnlessCancelled(e));
+            this._rootItem.handleEvent('opened').catch(Util.logErrorUnlessCancelled);
             this._rootItem.sendAboutToShow();
         } else {
             this._rootItem.handleEvent('closed').catch(e => {

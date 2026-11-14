@@ -35,7 +35,6 @@ export class IconCache {
     add(id, icon) {
         this._cache.set(id, {icon, expiration: this._newExpiration()});
         this._scheduleGC();
-        return icon;
     }
 
     get(id) {
@@ -51,10 +50,6 @@ export class IconCache {
         this._cache.clear();
         this._gcTimeout?.cancel();
         this._gcTimeout = null;
-    }
-
-    destroy() {
-        this.clear();
     }
 
     _newExpiration() {

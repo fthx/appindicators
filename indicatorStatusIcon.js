@@ -112,7 +112,7 @@ class IndicatorStatusIcon extends PanelMenu.Button {
         this.visible = this._indicator.status !== AppIndicator.SNIStatus.PASSIVE;
 
         if (this.visible !== wasVisible)
-            this._indicator.checkAlive().catch(logError);
+            this._indicator.checkAlive().catch(Util.logError);
     }
 
     _destroyMenuClient() {
@@ -215,7 +215,7 @@ class IndicatorStatusIcon extends PanelMenu.Button {
 
         if (this.menu.numMenuItems) {
             if (supportsActivation)
-                this._waitForDoubleClick().catch(logError);
+                this._waitForDoubleClick().catch(Util.logError);
             else
                 this.menu.toggle();
         }

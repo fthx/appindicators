@@ -127,8 +127,7 @@ class AppIndicatorProxy extends DBusProxy {
 
             const value = this.get_cached_property(name);
             if (value) {
-                this._queuePropertyUpdate(name, value, true).catch(e =>
-                    Util.logErrorUnlessCancelled(e));
+                this._queuePropertyUpdate(name, value, true).catch(Util.logErrorUnlessCancelled);
             }
         });
     }
@@ -191,7 +190,7 @@ class AppIndicatorProxy extends DBusProxy {
                 await this.refreshProperty(p, p.endsWith('Pixmap'));
             } catch (e) {
                 if (!OPTIONAL_PROPERTIES.includes(p) || !(e instanceof Gio.DBusError))
-                    logError(e);
+                    Util.logError(e, `Failed to refresh ${p}`);
             }
         }));
     }
@@ -276,7 +275,7 @@ export class AppIndicator extends Signals.EventEmitter {
 
         this._proxy.connectObject(
             'g-properties-changed', (_proxy, changed) => this._onPropertiesChanged(changed),
-            'notify::g-name-owner', () => this._nameOwnerChanged().catch(logError),
+            'notify::g-name-owner', () => this._nameOwnerChanged().catch(Util.logError),
             this);
 
         Shell.AppSystem.get_default().connectObject(
@@ -284,7 +283,7 @@ export class AppIndicator extends Signals.EventEmitter {
             'app-state-changed', () => this._updateAppInfo(),
             this);
 
-        this._setupProxy().catch(logError);
+        this._setupProxy().catch(Util.logError);
     }
 
     async _setupProxy() {
@@ -294,7 +293,7 @@ export class AppIndicator extends Signals.EventEmitter {
             await this._proxy.refreshAllProperties();
         } catch (e) {
             if (!Util.isCancelled(e)) {
-                logError(e, `While initializing proxy for ${this._uniqueId}`);
+                Util.logError(e, `While initializing proxy for ${this._uniqueId}`);
                 this.destroy();
             }
             return;
@@ -318,7 +317,7 @@ export class AppIndicator extends Signals.EventEmitter {
                 !!interfaceInfo.lookup_method('XAyatanaSecondaryActivate');
         } catch (e) {
             if (!Util.isCancelled(e))
-                console.debug(`${this._uniqueId}, check for Activation support: ${e.message}`);
+                Util.debug(`${this._uniqueId}, check for Activation support: ${e.message}`);
         }
     }
 
@@ -336,7 +335,7 @@ export class AppIndicator extends Signals.EventEmitter {
                 this.emit('accessible-name');
         } catch (e) {
             if (!Util.isCancelled(e))
-                console.debug(`${this._uniqueId}, failed getting the app info: ${e.message}`);
+                Util.debug(`${this._uniqueId}, failed getting the app info: ${e.message}`);
         }
     }
 
@@ -382,8 +381,8 @@ export class AppIndicator extends Signals.EventEmitter {
                 await this._checkNeededProperties();
             } catch (e) {
                 if (!Util.isCancelled(e)) {
-                    console.warn(`${this._uniqueId}, impossible to get basic properties: ${e}`);
-                    this.checkAlive().catch(logError);
+                    Util.warn(`${this._uniqueId}, impossible to get basic properties: ${e}`);
+                    this.checkAlive().catch(Util.logError);
                 }
             }
         }
@@ -488,7 +487,7 @@ export class AppIndicator extends Signals.EventEmitter {
         this._checkAliveTimeout = checkAliveTimeout;
 
         try {
-            console.debug(`${this._uniqueId}: may not respond, checking...`);
+            Util.debug(`${this._uniqueId}: may not respond, checking...`);
             await checkAliveTimeout;
 
             // We should call the Ping method instead but in some containers
@@ -503,10 +502,10 @@ export class AppIndicator extends Signals.EventEmitter {
             ].some(code => e.matches?.(DBusError, code));
 
             if (isGone) {
-                console.warn(`${this._uniqueId}: not on bus anymore, removing it`);
+                Util.warn(`${this._uniqueId}: not on bus anymore, removing it`);
                 this.destroy();
             } else {
-                Util.logErrorUnlessCancelled(e);
+                Util.logErrorUnlessCancelled(e, `${this._uniqueId}: failed to check if alive`);
             }
         } finally {
             if (this._checkAliveTimeout === checkAliveTimeout)
@@ -602,7 +601,7 @@ export class AppIndicator extends Signals.EventEmitter {
             if (e.matches?.(Gio.DBusError, Gio.DBusError.UNKNOWN_METHOD))
                 this._hasProvideXdgActivationToken = false;
             else if (!Util.isCancelled(e))
-                console.warn(`${this.id}, failed to provide activation token: ${e.message}`);
+                Util.warn(`${this.id}, failed to provide activation token: ${e.message}`);
         }
     }
 
@@ -619,9 +618,9 @@ export class AppIndicator extends Signals.EventEmitter {
         } catch (e) {
             if (e.matches?.(Gio.DBusError, Gio.DBusError.UNKNOWN_METHOD)) {
                 this.supportsActivation = false;
-                console.warn(`${this.id}, does not support activation: ${e.message}`);
+                Util.warn(`${this.id}, does not support activation: ${e.message}`);
             } else if (!Util.isCancelled(e)) {
-                console.error(`${this.id}, failed to activate: ${e.message}`);
+                Util.warn(`${this.id}, failed to activate: ${e.message}`);
             }
         }
     }
@@ -647,7 +646,7 @@ export class AppIndicator extends Signals.EventEmitter {
                 await this._proxy.SecondaryActivateAsync(x, y, this._cancellable);
         } catch (e) {
             if (!Util.isCancelled(e))
-                console.error(`${this.id}, failed to secondary activate: ${e.message}`);
+                Util.warn(`${this.id}, failed to secondary activate: ${e.message}`);
         }
     }
 
@@ -659,7 +658,7 @@ export class AppIndicator extends Signals.EventEmitter {
             ]);
         } catch (e) {
             if (!Util.isCancelled(e))
-                console.error(`${this.id}, failed to scroll: ${e.message}`);
+                Util.warn(`${this.id}, failed to scroll: ${e.message}`);
         }
     }
 }
@@ -764,7 +763,7 @@ class AppIndicatorsIconActor extends St.Icon {
         });
         this.connect('destroy', () => {
             this._cancelLoadings();
-            this._iconCache.destroy();
+            this._iconCache.clear();
             this._iconTheme = null;
             this._indicator = null;
         });
@@ -827,14 +826,14 @@ class AppIndicatorsIconActor extends St.Icon {
         const iconType = status === SNIStatus.NEEDS_ATTENTION && this._indicator.hasAttentionIcon
             ? SNIconType.ATTENTION : SNIconType.NORMAL;
 
-        this._updateIconByType(iconType, ICON_SIZE).catch(logError);
+        this._updateIconByType(iconType, ICON_SIZE).catch(Util.logError);
     }
 
     _updateOverlayIcon() {
         if (this._indicator.status === SNIStatus.PASSIVE)
             return;
 
-        this._updateIconByType(SNIconType.OVERLAY, OVERLAY_ICON_SIZE).catch(logError);
+        this._updateIconByType(SNIconType.OVERLAY, OVERLAY_ICON_SIZE).catch(Util.logError);
     }
 
     async _updateIconByType(iconType, iconSize) {
@@ -855,7 +854,8 @@ class AppIndicatorsIconActor extends St.Icon {
             if (Util.isCancelled(e))
                 return;
 
-            logError(e, `${this.debugId}: unable to update the ${isOverlay ? 'overlay ' : ''}icon`);
+            Util.logError(e, `${this.debugId}: unable to update the ${
+                isOverlay ? 'overlay ' : ''}icon`);
         } finally {
             if (this._loadingCancellables.get(isOverlay) === cancellable)
                 this._loadingCancellables.delete(isOverlay);
@@ -959,7 +959,7 @@ class AppIndicatorsIconActor extends St.Icon {
             if (!iconInfo) {
                 // Fallback to the default icon theme, without caching the
                 // result as the icon may be added to the theme path later
-                console.debug(`${this.debugId}, icon '${name}' not found in ${themePath}`);
+                Util.debug(`${this.debugId}, icon '${name}' not found in ${themePath}`);
                 return {gicon: new Gio.ThemedIcon({name}), uncached: true};
             }
 
