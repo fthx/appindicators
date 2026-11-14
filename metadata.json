@@ -1,0 +1,13 @@
+{
+  "description": "App indicators in the top panel.\n\nLightweight fork of Ubuntu AppIndicators: no settings, no legacy tray icons, hardened and cleaned code.",
+  "name": "AppIndicators Lite",
+  "shell-version": [
+    "51"
+  ],
+  "url": "https://github.com/fthx/appindicators",
+  "uuid": "appindicators@fthx",
+  "version": 999,
+  "donations": {
+    "paypal": "fthx75"
+  }
+}
